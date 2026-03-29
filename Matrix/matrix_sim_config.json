@@ -1,6 +1,6 @@
 {
-    "send_port": 3003,
-    "recv_port": 3002,
+    "send_port": 7800,
+    "recv_port": 4626,
     "device_ip": "255.255.255.255",
     "last_used_ports": []
 }

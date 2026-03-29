@@ -29,9 +29,9 @@ except ImportError:
     winsound = None
 
 # ─── Network constants ───────────────────────────────────────────────────────
-UDP_SEND_IP   = "255.255.255.255"
+UDP_SEND_IP   = "168.254.182.11"
 UDP_SEND_PORT = 4626
-UDP_RECV_IP   = "0.0.0.0"
+UDP_RECV_IP   = "255.255.255.255"
 UDP_RECV_PORT = 7800
 
 

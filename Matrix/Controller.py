@@ -24,13 +24,32 @@ FRAME_DATA_LENGTH = NUM_CHANNELS * LEDS_PER_CHANNEL * 3
 BOARD_WIDTH = 16
 BOARD_HEIGHT = 32 # Full Matrix
 
+PASSWORD_ARRAY = [
+    35,63,187,69,107,178,92,76,39,69,205,37,223,255,165,231,16,220,99,61,
+    25,203,203,155,107,30,92,144,218,194,226,88,196,190,67,195,159,185,209,24,
+    163,65,25,172,126,63,224,61,160,80,125,91,239,144,25,141,183,204,171,188,
+    255,162,104,225,186,91,232,3,100,208,49,211,37,192,20,99,27,92,147,152,
+    86,177,53,153,94,177,200,33,175,195,15,228,247,18,244,150,165,229,212,96,
+    84,200,168,191,38,112,171,116,121,186,147,203,30,118,115,159,238,139,60,
+    57,235,213,159,198,160,50,97,201,253,242,240,77,102,12,183,235,243,247,75,
+    90,13,236,56,133,150,128,138,190,140,13,213,18,7,117,255,45,69,214,179,
+    50,28,66,123,239,190,73,142,218,253,5,212,174,152,75,226,226,172,78,35,
+    93,250,238,19,32,247,223,89,123,86,138,150,146,214,192,93,152,156,211,67,
+    51,195,165,66,10,10,31,1,198,234,135,34,128,208,200,213,169,238,74,221,
+    208,104,170,166,36,76,177,196,3,141,167,127,56,177,203,45,107,46,82,217,
+    139,168,45,198,6,43,11,57,88,182,84,189,29,35,143,138,171
+]
+
+def calc_checksum(data):
+    return PASSWORD_ARRAY[sum(data) & 0xFF]
+
 _CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "matrix_ctrl_config.json")
 
 def _load_config():
     defaults = {
         "device_ip": "255.255.255.255",
-        "send_port": 3002,
-        "recv_port": 3003,
+        "send_port": 4626,
+        "recv_port": 7800,
         "auto_start_streaming": False,
         "last_used_ports": []
     }
@@ -71,7 +90,7 @@ class NetworkManager:
         self.sequence_number = 0
         self.bind_ip = "0.0.0.0"
         self.target_ip = CONFIG.get("device_ip", "255.255.255.255")
-        self.send_port = CONFIG.get("send_port", 3002)
+        self.send_port = CONFIG.get("send_port", 4626)
         
         # Priority: Auto-detecting 169.254 (for hardware)
 
@@ -145,10 +164,9 @@ class NetworkManager:
             0x02, 0x00, 0x00, 0x33, 0x44,   
             (self.sequence_number >> 8) & 0xFF,
             self.sequence_number & 0xFF,
-            0x00, 0x00, 0x00 
+            0x00, 0x00
         ])
-        start_packet.append(0x0E) # Force Checksum
-        start_packet.append(0x00) 
+        start_packet.append(calc_checksum(start_packet))
         try: 
             self.sock_send.sendto(start_packet, (target_ip, port))
             self.sock_send.sendto(start_packet, ("127.0.0.1", port))
@@ -175,8 +193,7 @@ class NetworkManager:
             0x75, rand1, rand2, 
             (fff0_len >> 8) & 0xFF, (fff0_len & 0xFF)
         ]) + fff0_internal
-        fff0_packet.append(0x1E) # Force Checksum
-        fff0_packet.append(0x00) 
+        fff0_packet.append(calc_checksum(fff0_packet))
         
         try: 
             self.sock_send.sendto(fff0_packet, (target_ip, port))
@@ -208,12 +225,7 @@ class NetworkManager:
                 (payload_len >> 8) & 0xFF, (payload_len & 0xFF)
             ]) + internal_data
             
-            if len(chunk) == 984:
-                packet.append(0x1E) 
-            else:
-                packet.append(0x36) 
-                
-            packet.append(0x00)
+            packet.append(calc_checksum(packet))
             
             try: 
                 self.sock_send.sendto(packet, (target_ip, port))
@@ -231,10 +243,9 @@ class NetworkManager:
             0x02, 0x00, 0x00, 0x55, 0x66,
             (self.sequence_number >> 8) & 0xFF,
             self.sequence_number & 0xFF,
-            0x00, 0x00, 0x00 
+            0x00, 0x00
         ])
-        end_packet.append(0x0E) 
-        end_packet.append(0x00) 
+        end_packet.append(calc_checksum(end_packet))
         try: 
             self.sock_send.sendto(end_packet, (target_ip, port))
             self.sock_send.sendto(end_packet, ("127.0.0.1", port))
@@ -269,8 +280,8 @@ class MatrixGUI:
         self.trigger_states = {}
         
         # Initialize port variables BEFORE binding
-        self.port_out_var = tk.StringVar(value=str(CONFIG.get("send_port", 3002)))
-        self.port_in_var = tk.StringVar(value=str(CONFIG.get("recv_port", 3003)))
+        self.port_out_var = tk.StringVar(value=str(CONFIG.get("send_port", 4626)))
+        self.port_in_var = tk.StringVar(value=str(CONFIG.get("recv_port", 7800)))
 
         self.receiver_running = True
         self.sock_recv = None
@@ -407,7 +418,7 @@ class MatrixGUI:
         while self.receiver_running:
             try:
                 data, addr = self.sock_recv.recvfrom(2048)
-                if len(data) >= 1373 and data[0] == 0x88:
+                if len(data) == 1400 and data[0] == 0x88:
                     changed = False
                     for ch in range(8):
                         base = 2 + ch * 171
@@ -703,8 +714,8 @@ class ConfigDialog(tk.Toplevel):
         self.on_save = on_save
 
         self.sv_ip   = tk.StringVar(value=cfg.get("device_ip", "255.255.255.255"))
-        self.sv_send = tk.StringVar(value=str(cfg.get("send_port", 3002)))
-        self.sv_recv = tk.StringVar(value=str(cfg.get("recv_port", 3003)))
+        self.sv_send = tk.StringVar(value=str(cfg.get("send_port", 4626)))
+        self.sv_recv = tk.StringVar(value=str(cfg.get("recv_port", 7800)))
         self.sv_auto_stream = tk.BooleanVar(value=cfg.get("auto_start_streaming", False))
         self.sv_iface = tk.StringVar(value="0.0.0.0")
 
@@ -775,7 +786,7 @@ class ConfigDialog(tk.Toplevel):
         iface = self.sv_iface.get()
         try:
             port = int(self.sv_send.get())
-        except: port = 3002
+        except: port = 4626
         
         self.lbl_disc.config(text="Scanning...", fg="#ffaa00")
         

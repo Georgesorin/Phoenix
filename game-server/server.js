@@ -71,6 +71,29 @@ simSock.bind(SIM_LISTEN_PORT, () => {
 })
 simSock.on('error', (err) => { console.log('  UDP socket error:', err.message) })
 
+// ── PASSWORD_ARRAY for hardware checksum (per documentation) ────────────────
+const PASSWORD_ARRAY = [
+  35,63,187,69,107,178,92,76,39,69,205,37,223,255,165,231,16,220,99,61,
+  25,203,203,155,107,30,92,144,218,194,226,88,196,190,67,195,159,185,209,24,
+  163,65,25,172,126,63,224,61,160,80,125,91,239,144,25,141,183,204,171,188,
+  255,162,104,225,186,91,232,3,100,208,49,211,37,192,20,99,27,92,147,152,
+  86,177,53,153,94,177,200,33,175,195,15,228,247,18,244,150,165,229,212,96,
+  84,200,168,191,38,112,171,116,121,186,147,203,30,118,115,159,238,139,60,
+  57,235,213,159,198,160,50,97,201,253,242,240,77,102,12,183,235,243,247,75,
+  90,13,236,56,133,150,128,138,190,140,13,213,18,7,117,255,45,69,214,179,
+  50,28,66,123,239,190,73,142,218,253,5,212,174,152,75,226,226,172,78,35,
+  93,250,238,19,32,247,223,89,123,86,138,150,146,214,192,93,152,156,211,67,
+  51,195,165,66,10,10,31,1,198,234,135,34,128,208,200,213,169,238,74,221,
+  208,104,170,166,36,76,177,196,3,141,167,127,56,177,203,45,107,46,82,217,
+  139,168,45,198,6,43,11,57,88,182,84,189,29,35,143,138,171
+]
+
+function calcChecksum(data) {
+  let sum = 0
+  for (let i = 0; i < data.length; i++) sum += data[i]
+  return PASSWORD_ARRAY[sum & 0xFF]
+}
+
 // Convert 16x32 hex-color grid → 1536-byte frame buffer (GRB channel-interleaved)
 function gridToFrameBuffer(grid) {
   const buf = Buffer.alloc(64 * 24)  // LEDS_PER_CH(64) * 24 = 1536 bytes
@@ -87,7 +110,7 @@ function gridToFrameBuffer(grid) {
       const rowInCh  = y % 4
       const ledPos   = rowInCh * 16 + (rowInCh % 2 === 0 ? x : 15 - x)
       const offset   = ledPos * 24 + channel
-      buf[offset]      = g   // c1 = G (simulator swaps to r=c2, g=c1)
+      buf[offset]      = g   // c1 = G (GRB swap per docs)
       buf[offset +  8] = r   // c2 = R
       buf[offset + 16] = b   // c3 = B
     }
@@ -96,46 +119,75 @@ function gridToFrameBuffer(grid) {
 }
 
 function makeSimPkt(cmdType, payload = Buffer.alloc(0), pktIdx = 0) {
-  const hdr = Buffer.alloc(14)
-  hdr[0] = 0x75
-  hdr.writeUInt16BE(cmdType, 8)
-  hdr.writeUInt16BE(pktIdx, 10)
-  const pkt = Buffer.concat([hdr, payload, Buffer.alloc(2)])
-  let sum = 0
-  for (let i = 0; i < pkt.length - 1; i++) sum += pkt[i]
-  pkt[pkt.length - 1] = sum & 0xFF
-  return pkt
+  const r1 = Math.floor(Math.random() * 128)
+  const r2 = Math.floor(Math.random() * 128)
+  const internal = Buffer.from([
+    0x02, 0x00, 0x00,
+    (cmdType >> 8) & 0xFF, cmdType & 0xFF,
+    (pktIdx >> 8) & 0xFF, pktIdx & 0xFF,
+    (payload.length >> 8) & 0xFF, payload.length & 0xFF,
+  ])
+  const hdr = Buffer.from([
+    0x75, r1, r2,
+    (internal.length >> 8) & 0xFF, internal.length & 0xFF,
+  ])
+  const pkt = Buffer.concat([hdr, internal, payload])
+  const checksumByte = calcChecksum(pkt)
+  return Buffer.concat([pkt, Buffer.from([checksumByte])])
 }
 
-function sendFrameToSim(grid) {
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+async function sendFrameToSim(grid) {
   const fb = gridToFrameBuffer(grid)
-  const pkts = [
-    makeSimPkt(0x3344),                          // Start Frame
-    makeSimPkt(0x8877, fb.slice(0, 984), 1),    // Data chunk 1
-    makeSimPkt(0x8877, fb.slice(984),    2),    // Data chunk 2
-    makeSimPkt(0x5566),                          // End Frame
-  ]
-  for (const p of pkts) {
-    simSock.send(p, SIM_TARGET_PORT, SIM_DEVICE_IP, (err) => {
-      if (err) console.log('  UDP send error:', err.message)
-    })
+  // Per docs: Start(0x3344) → FFF0 layout init → Data chunks(0x8877) → End(0x5566)
+  // With 2ms inter-packet delays for Matrix chunking
+  const NUM_CHANNELS = 8, LEDS_PER_CH = 64
+  const fff0Payload = Buffer.alloc(NUM_CHANNELS * 2)
+  for (let i = 0; i < NUM_CHANNELS; i++) {
+    fff0Payload.writeUInt16BE(LEDS_PER_CH, i * 2)
   }
+
+  const startPkt = makeSimPkt(0x3344)
+  const fff0Pkt  = makeSimPkt(0x8877, fff0Payload, 0xFFF0)
+  const dataPkt1 = makeSimPkt(0x8877, fb.slice(0, 984), 1)
+  const dataPkt2 = makeSimPkt(0x8877, fb.slice(984),    2)
+  const endPkt   = makeSimPkt(0x5566)
+
+  const sendOne = (pkt) => new Promise((resolve) => {
+    simSock.send(pkt, SIM_TARGET_PORT, SIM_DEVICE_IP, (err) => {
+      if (err) console.log('  UDP send error:', err.message)
+      resolve()
+    })
+  })
+
+  await sendOne(startPkt)
+  await sleep(2)
+  await sendOne(fff0Pkt)
+  await sleep(2)
+  await sendOne(dataPkt1)
+  await sleep(2)
+  await sendOne(dataPkt2)
+  await sleep(2)
+  await sendOne(endPkt)
 }
 
 // Forward Simulator click triggers → display
+// Matrix triggers: 1400-byte packets, button data at offsets [1200, 1263], 0xCC = pressed
 simSock.on('message', (data) => {
-  if (data.length >= 2 && data[0] === 0x88 && data[1] === 0x01) {
+  if (data.length === 1400 && data[0] === 0x88) {
     const triggers = []
-    for (let ch = 0; ch < 8; ch++) {
-      const base = 2 + ch * 171
-      if (base + 65 > data.length) continue
-      for (let led = 0; led < 64; led++) {
-        if (data[base + 1 + led] === 0xCC) {
-          const row = Math.floor(led / 16)
-          const x = row % 2 === 0 ? (led % 16) : (15 - led % 16)
-          const y = ch * 4 + row
-          triggers.push({ x, y })
-        }
+    const TRIGGER_OFFSET = 1200
+    for (let i = 0; i < 64; i++) {
+      if (data[TRIGGER_OFFSET + i] === 0xCC) {
+        // Convert linear index back to (x, y) using zig-zag
+        const ch = Math.floor(i / 8)  // which channel-group
+        const ledInGroup = i % 8
+        // Simple linear mapping: tile index → grid position
+        // Each tile maps to a position on the 16x32 grid
+        const row = Math.floor(i / 16)
+        const col = row % 2 === 0 ? (i % 16) : (15 - i % 16)
+        triggers.push({ x: col, y: row * 2 })  // approximate mapping
       }
     }
     // ── Shooter: tile triggers → player movement ──────────────────────────
@@ -159,6 +211,42 @@ simSock.on('message', (data) => {
       nbState.activeTiles = triggers  // store all pressed tiles this frame
     }
 
+    if (displayWs && displayWs.readyState === 1) {
+      try { displayWs.send(JSON.stringify({ type: 'sim_triggers', triggers })) } catch {}
+    }
+  }
+  // Also support simulator-style packets (171-byte channel blocks)
+  else if (data.length >= 2 && data[0] === 0x88 && data.length > 600) {
+    const triggers = []
+    for (let ch = 0; ch < 8; ch++) {
+      const base = 2 + ch * 171
+      if (base + 65 > data.length) continue
+      for (let led = 0; led < 64; led++) {
+        if (data[base + 1 + led] === 0xCC) {
+          const row = Math.floor(led / 16)
+          const x = row % 2 === 0 ? (led % 16) : (15 - led % 16)
+          const y = ch * 4 + row
+          triggers.push({ x, y })
+        }
+      }
+    }
+    if (triggers.length > 0 && gameState && phase === 'playing') {
+      for (const t of triggers) {
+        const which = t.y >= 16 ? 'p1' : 'p2'
+        const player = gameState[which]
+        const rawDx = t.x - player.x
+        const rawDy = t.y - player.y
+        const dx = rawDx === 0 ? 0 : (rawDx > 0 ? 1 : -1)
+        const dy = rawDy === 0 ? 0 : (rawDy > 0 ? 1 : -1)
+        if (dx !== 0 || dy !== 0) {
+          pendingMove[which] = { dx, dy }
+          player.dir = { dx, dy }
+        }
+      }
+    }
+    if (nbPhase === 'nb_playing' && nbState) {
+      nbState.activeTiles = triggers
+    }
     if (displayWs && displayWs.readyState === 1) {
       try { displayWs.send(JSON.stringify({ type: 'sim_triggers', triggers })) } catch {}
     }
