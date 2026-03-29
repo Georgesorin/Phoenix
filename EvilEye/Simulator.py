@@ -13,8 +13,8 @@ _CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eye_sim
 
 def _load_config():
     defaults = {
-        "send_port": 7800,
-        "recv_port": 4626,
+        "send_port": 3003,
+        "recv_port": 3002,
         "device_ip": "255.255.255.255",
         "last_used_ports": []
     }
@@ -153,8 +153,8 @@ class EvilEyeSimulator:
         self._pkt_count = 0
         self._bind_ip = "0.0.0.0"
         
-        self.listen_port = CONFIG.get("recv_port", 4626)
-        self.send_port = CONFIG.get("send_port", 7800)
+        self.listen_port = CONFIG.get("recv_port", 3002)
+        self.send_port = CONFIG.get("send_port", 3003)
 
         self._wall_canvases = {}
         self._build_ui()

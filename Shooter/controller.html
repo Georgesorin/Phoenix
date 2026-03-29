@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover"/>
+  <title>Shooter Controller</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #080808; color: #eee;
+      font-family: 'Courier New', monospace;
+      overflow: hidden; touch-action: none;
+    }
+
+    .screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      height: 100dvh;
+      padding: 20px 16px max(env(safe-area-inset-bottom), 20px);
+      gap: 12px;
+    }
+    .screen.active { display: flex; }
+
+    .status { display:flex; align-items:center; gap:8px; font-size:11px; color:#444; align-self:stretch; }
+    .dot { width:8px; height:8px; border-radius:50%; background:#ff4444; transition:background .3s; }
+    .dot.on { background:#00ff41; }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    /* ════ JOIN SCREEN ════ */
+    #joinScreen { justify-content: center; gap: 24px; }
+
+    .join-title {
+      font-size: 22px; font-weight: bold;
+      letter-spacing: 4px; color: #00ff41;
+      text-align: center; line-height: 1.4;
+    }
+    .join-title small {
+      display: block; font-size: 11px;
+      letter-spacing: 2px; color: #333; margin-top: 4px;
+    }
+
+    /* Team selector */
+    .team-selector { display: flex; gap: 10px; width: 100%; }
+    .team-pick-btn {
+      flex: 1; padding: 20px 0;
+      border-radius: 12px; border: 2px solid #222;
+      background: #111;
+      font-family: inherit; font-size: 15px;
+      font-weight: bold; letter-spacing: 2px;
+      cursor: pointer; transition: all .15s;
+      -webkit-tap-highlight-color: transparent;
+      color: #444;
+    }
+    .team-pick-btn.blue { color: #1a5a6a; border-color: #0a2a33; }
+    .team-pick-btn.blue.active {
+      border-color: #00ccff; color: #00ccff; background: #061418;
+    }
+    .team-pick-btn.red { color: #6a1a1a; border-color: #330a0a; }
+    .team-pick-btn.red.active {
+      border-color: #ff3333; color: #ff3333; background: #180606;
+    }
+    .team-pick-btn:active { transform: scale(.97); }
+
+    .name-wrap { display:flex; flex-direction:column; gap:10px; width:100%; }
+
+    .name-input {
+      width: 100%; padding: 16px 14px;
+      background: #111; border: 2px solid #333;
+      border-radius: 10px; color: #eee;
+      font-family: inherit; font-size: 18px;
+      letter-spacing: 2px; text-align: center;
+      outline: none; transition: border-color .15s;
+      -webkit-appearance: none;
+    }
+    .name-input:focus { border-color: #555; }
+    .name-input::placeholder { color: #333; }
+
+    .join-btn {
+      width: 100%; padding: 20px 0;
+      border-radius: 12px; border: 2px solid #333;
+      background: #111; color: #555;
+      font-family: inherit; font-size: 16px;
+      font-weight: bold; letter-spacing: 4px;
+      cursor: pointer; transition: all .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .join-btn.team-blue { border-color: #00ccff; color: #00ccff; background: #061418; }
+    .join-btn.team-red  { border-color: #ff3333; color: #ff3333; background: #180606; }
+    .join-btn:active { transform: scale(.97); }
+    .join-btn:disabled { opacity: .3; pointer-events: none; }
+
+    /* ════ LOBBY SCREEN ════ */
+    #lobbyScreen { justify-content: center; gap: 28px; }
+
+    .lobby-title {
+      font-size: 18px; font-weight: bold;
+      letter-spacing: 4px; color: #00ff41;
+      text-align: center;
+    }
+
+    .team-badge {
+      padding: 14px 28px; border-radius: 12px; border: 2px solid;
+      font-size: 20px; font-weight: bold; letter-spacing: 3px;
+      text-align: center;
+    }
+    .team-badge.blue { border-color: #00ccff; color: #00ccff; background: #061418; }
+    .team-badge.red  { border-color: #ff3333; color: #ff3333; background: #180606; }
+
+    .ready-section { display:flex; flex-direction:column; align-items:center; gap:10px; width:100%; }
+
+    .ready-btn {
+      width: 100%; padding: 20px 0;
+      border-radius: 12px; border: 2px solid #444;
+      background: #1a1a1a; color: #aaa;
+      font-family: inherit; font-size: 16px;
+      font-weight: bold; letter-spacing: 3px;
+      cursor: pointer; transition: all .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .ready-btn.blue { border-color: #00ccff; color: #00ccff; background: #061418; }
+    .ready-btn.red  { border-color: #ff3333; color: #ff3333; background: #180606; }
+    .ready-btn.done { opacity: .4; pointer-events: none; }
+
+    .other-team-status { font-size:12px; color:#444; letter-spacing:1px; text-align:center; }
+    .other-team-status.has-players { color: #00ff41; }
+
+    /* ════ VOTE SCREEN ════ */
+    #voteScreen { justify-content: center; gap: 16px; }
+
+    .vote-header { text-align:center; }
+    .vote-header h2 { font-size:15px; letter-spacing:4px; color:#00ff41; margin-bottom:6px; }
+    .vote-cd { font-size:52px; font-weight:bold; color:#fff; line-height:1; }
+    .vote-cd.urgent { color:#ff4444; animation:blink .4s infinite; }
+
+    .vote-who { font-size:12px; font-weight:bold; letter-spacing:2px; text-align:center; }
+
+    .vote-cards { display:flex; flex-direction:column; gap:10px; width:100%; }
+    .vote-card {
+      border:2px solid #222; border-radius:12px; background:#111;
+      padding:14px 16px; cursor:pointer;
+      display:flex; align-items:center; gap:14px;
+      -webkit-tap-highlight-color:transparent;
+      touch-action:none; user-select:none;
+      transition:all .1s;
+    }
+    .vote-card:active { transform:scale(.97); }
+    .vote-card.selected.blue { border-color:#00ccff; background:#061418; }
+    .vote-card.selected.red  { border-color:#ff3333; background:#180606; }
+    .vote-card.selected { pointer-events:none; }
+
+    .vc-swatches { display:flex; gap:3px; flex-shrink:0; }
+    .vc-swatch   { width:16px; height:16px; border-radius:3px; }
+    .vc-info     { flex:1; }
+    .vc-name     { font-size:13px; font-weight:bold; letter-spacing:2px; color:#ccc; }
+    .vc-desc     { font-size:10px; color:#555; margin-top:2px; }
+    .vc-check    { font-size:20px; flex-shrink:0; opacity:0; transition:opacity .15s; }
+    .vote-card.selected .vc-check { opacity:1; }
+
+    .vote-msg { font-size:11px; color:#555; letter-spacing:1px; text-align:center; }
+    .vote-msg.voted { color:#00ff41; font-weight:bold; }
+
+    /* ════ GAME SCREEN ════ */
+    .game-player-bar {
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; font-size: 14px; font-weight: bold;
+      letter-spacing: 2px; flex-shrink: 0;
+    }
+
+    .action-wrap { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; width:100%; }
+
+    .fire-grid {
+      display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr);
+      gap:6px; width:100%; flex:3; min-height:0;
+    }
+    .fire-btn {
+      border-radius:12px; border:2px solid #222; background:#111; color:#444;
+      font-family:inherit; font-size:20px; font-weight:bold;
+      cursor:pointer; -webkit-tap-highlight-color:transparent; user-select:none;
+      transition:background .06s,border-color .06s,transform .06s;
+      touch-action:none; display:flex; align-items:center; justify-content:center;
+    }
+    .fire-btn.center { background:#0a0a0a; border-color:#1a1a1a; font-size:11px; letter-spacing:2px; }
+    .blue-active .fire-btn          { border-color:#061418; color:#104040; }
+    .blue-active .fire-btn.pressed  { background:#061418; border-color:#00ccff; color:#00ccff; transform:scale(.94); }
+    .red-active  .fire-btn          { border-color:#2a0808; color:#441010; }
+    .red-active  .fire-btn.pressed  { background:#2a0808; border-color:#ff3333; color:#ff3333; transform:scale(.94); }
+    .fire-btn.cooling { opacity:.35; pointer-events:none; }
+
+    .action-btn {
+      width:100%; padding:0; border-radius:16px; border:2px solid #333;
+      background:#111; color:#444;
+      font-family:inherit; font-size:22px; font-weight:bold; letter-spacing:4px;
+      cursor:pointer; -webkit-tap-highlight-color:transparent; user-select:none;
+      transition:background .06s,border-color .06s,transform .06s;
+      touch-action:none; display:flex; align-items:center; justify-content:center;
+    }
+    .action-btn.knife-btn { flex:1; }
+    .blue-active .action-btn          { border-color:#061418; color:#104040; }
+    .blue-active .action-btn.pressed  { background:#061418; border-color:#00ccff; color:#00ccff; transform:scale(.96); }
+    .red-active  .action-btn          { border-color:#2a0808; color:#441010; }
+    .red-active  .action-btn.pressed  { background:#2a0808; border-color:#ff3333; color:#ff3333; transform:scale(.96); }
+
+    .hint { font-size:10px; color:#222; text-align:center; flex-shrink:0; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════ JOIN ══════════════════ -->
+<div class="screen active" id="joinScreen">
+  <div class="status">
+    <div class="dot" id="dot"></div>
+    <span id="stxt">Connecting…</span>
+  </div>
+
+  <div class="join-title">
+    LEDHACK
+    <small>SHOOTER</small>
+  </div>
+
+  <div class="team-selector">
+    <button class="team-pick-btn blue active" data-team="1">🔵 BLUE<br>TEAM</button>
+    <button class="team-pick-btn red"         data-team="2">🔴 RED<br>TEAM</button>
+  </div>
+
+  <div class="name-wrap">
+    <input
+      class="name-input" id="nameInput"
+      type="text" maxlength="16"
+      placeholder="your name"
+      autocomplete="off" autocorrect="off" spellcheck="false"
+    />
+    <button class="join-btn team-blue" id="joinBtn">JOIN GAME</button>
+  </div>
+
+  <div class="hint">pick your team · enter name · tap join</div>
+</div>
+
+<!-- ══════════════════ LOBBY ══════════════════ -->
+<div class="screen" id="lobbyScreen">
+  <div class="status">
+    <div class="dot" id="dot2"></div>
+    <span id="stxt2">Connected</span>
+  </div>
+
+  <div class="lobby-title">WAITING ROOM</div>
+
+  <div class="team-badge blue" id="teamBadge">🔵 BLUE TEAM</div>
+
+  <div class="ready-section">
+    <button class="ready-btn blue" id="readyBtn">READY UP</button>
+    <div class="other-team-status" id="otherTeamStatus">waiting for red team…</div>
+  </div>
+
+  <div class="hint">both teams must ready up to start</div>
+</div>
+
+<!-- ══════════════════ VOTE ══════════════════ -->
+<div class="screen" id="voteScreen">
+  <div class="vote-header">
+    <h2>CHOOSE YOUR MAP</h2>
+    <div class="vote-cd" id="voteCountdown">10</div>
+  </div>
+
+  <div class="vote-who" id="voteWho" style="color:#00ccff">VOTING AS BLUE</div>
+
+  <div class="vote-cards">
+    <div class="vote-card" data-idx="0">
+      <div class="vc-swatches">
+        <div class="vc-swatch" style="background:#1f1200"></div>
+        <div class="vc-swatch" style="background:#008800"></div>
+        <div class="vc-swatch" style="background:#ff6600"></div>
+      </div>
+      <div class="vc-info">
+        <div class="vc-name">OLD DESERT</div>
+        <div class="vc-desc">Sandy ruins · yellow bg · green barricades</div>
+      </div>
+      <div class="vc-check">✓</div>
+    </div>
+    <div class="vote-card" data-idx="1">
+      <div class="vc-swatches">
+        <div class="vc-swatch" style="background:#000000"></div>
+        <div class="vc-swatch" style="background:#ee5500"></div>
+        <div class="vc-swatch" style="background:#ffee00"></div>
+      </div>
+      <div class="vc-info">
+        <div class="vc-name">HAUNTED HOUSE</div>
+        <div class="vc-desc">Dark corridors · black bg · orange barricades</div>
+      </div>
+      <div class="vc-check">✓</div>
+    </div>
+    <div class="vote-card" data-idx="2">
+      <div class="vc-swatches">
+        <div class="vc-swatch" style="background:#001400"></div>
+        <div class="vc-swatch" style="background:#bbbbbb"></div>
+        <div class="vc-swatch" style="background:#ffee00"></div>
+      </div>
+      <div class="vc-info">
+        <div class="vc-name">BATTLEFIELD</div>
+        <div class="vc-desc">Green trenches · white barricades</div>
+      </div>
+      <div class="vc-check">✓</div>
+    </div>
+  </div>
+
+  <div class="vote-msg" id="voteMsg">TAP A MAP TO VOTE</div>
+</div>
+
+<!-- ══════════════════ GAME ══════════════════ -->
+<div class="screen blue-active" id="gameScreen">
+  <div class="status">
+    <div class="dot" id="dot3"></div>
+    <span id="stxt3">Connected</span>
+  </div>
+
+  <div class="game-player-bar">
+    <span id="gameTeamLabel" style="color:#00ccff">🔵 BLUE TEAM</span>
+  </div>
+
+  <div class="action-wrap">
+    <div class="fire-grid" id="fireGrid">
+      <button class="fire-btn" data-dx="-1" data-dy="-1">↖</button>
+      <button class="fire-btn" data-dx="0"  data-dy="-1">↑</button>
+      <button class="fire-btn" data-dx="1"  data-dy="-1">↗</button>
+      <button class="fire-btn" data-dx="-1" data-dy="0">←</button>
+      <button class="fire-btn center">FIRE</button>
+      <button class="fire-btn" data-dx="1"  data-dy="0">→</button>
+      <button class="fire-btn" data-dx="-1" data-dy="1">↙</button>
+      <button class="fire-btn" data-dx="0"  data-dy="1">↓</button>
+      <button class="fire-btn" data-dx="1"  data-dy="1">↘</button>
+    </div>
+    <button class="action-btn knife-btn" id="knifeBtn">KNIFE</button>
+  </div>
+
+  <div class="hint">tap a direction to fire · move with the matrix</div>
+</div>
+
+<script type="module">
+  import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
+  import { getFirestore, doc, getDoc, setDoc, serverTimestamp }
+                               from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+
+  // ── Firebase ───────────────────────────────────────────────────────────────
+  const fbApp = initializeApp({
+    apiKey:            'AIzaSyBxkAtcOluZ3pyXmGvSASEJJH4Lmz_3UCM',
+    authDomain:        'prosol-cat24.firebaseapp.com',
+    projectId:         'prosol-cat24',
+    storageBucket:     'prosol-cat24.firebasestorage.app',
+    messagingSenderId: '45158606215',
+    appId:             '1:45158606215:web:bfbebe4b1effc38686df22',
+  })
+  const db = getFirestore(fbApp)
+
+  let deviceId = localStorage.getItem('shooterDeviceId')
+  if (!deviceId) { deviceId = crypto.randomUUID(); localStorage.setItem('shooterDeviceId', deviceId) }
+
+  async function loadSavedName() {
+    try {
+      const snap = await getDoc(doc(db, 'players', deviceId))
+      if (snap.exists() && snap.data().name) return snap.data().name
+    } catch {}
+    return localStorage.getItem('shooterName') || ''
+  }
+
+  async function saveName(name) {
+    localStorage.setItem('shooterName', name)
+    try { await setDoc(doc(db, 'players', deviceId), { name, lastSeen: serverTimestamp() }) } catch {}
+  }
+
+  // ── Elements ───────────────────────────────────────────────────────────────
+  const joinScreen      = document.getElementById('joinScreen')
+  const lobbyScreen     = document.getElementById('lobbyScreen')
+  const voteScreen      = document.getElementById('voteScreen')
+  const gameScreen      = document.getElementById('gameScreen')
+  const nameInput       = document.getElementById('nameInput')
+  const joinBtn         = document.getElementById('joinBtn')
+  const readyBtn        = document.getElementById('readyBtn')
+  const teamBadge       = document.getElementById('teamBadge')
+  const otherTeamStatus = document.getElementById('otherTeamStatus')
+  const gameTeamLabel   = document.getElementById('gameTeamLabel')
+  const fireGrid        = document.getElementById('fireGrid')
+  const fireBtns        = fireGrid.querySelectorAll('.fire-btn[data-dx]')
+  const knifeBtn        = document.getElementById('knifeBtn')
+
+  const allDots  = ['dot','dot2','dot3'].map(id => document.getElementById(id))
+  const allStxts = ['stxt','stxt2','stxt3'].map(id => document.getElementById(id))
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let selectedTeam = 1    // 1=blue, 2=red
+  let player       = null // assigned by server (same as selectedTeam)
+  let playerName   = ''
+  let joined       = false
+  let isReady      = false
+  let hasVoted     = false
+  let cooling      = false
+  let voteTimer    = null
+  let ws           = null
+
+  const TEAM_COLOR  = { 1: '#00ccff', 2: '#ff3333' }
+  const TEAM_CLASS  = { 1: 'blue',    2: 'red'     }
+  const TEAM_LABEL  = { 1: '🔵 BLUE TEAM', 2: '🔴 RED TEAM' }
+  const GAME_CLASS  = { 1: 'blue-active', 2: 'red-active' }
+  const TEAM_EMOJI  = { 1: '🔵', 2: '🔴' }
+
+  // ── Screen helpers ─────────────────────────────────────────────────────────
+  function showScreen(id) {
+    for (const s of [joinScreen, lobbyScreen, voteScreen, gameScreen])
+      s.classList.remove('active')
+    document.getElementById(id).classList.add('active')
+  }
+
+  function updateConnected(connected) {
+    const txt = connected
+      ? (player ? `${TEAM_LABEL[player]} · ${playerName}` : 'Connected')
+      : 'Reconnecting…'
+    for (const d of allDots)  d.className = 'dot' + (connected ? ' on' : '')
+    for (const s of allStxts) s.textContent = txt
+  }
+
+  // ── Load saved name ────────────────────────────────────────────────────────
+  loadSavedName().then(name => { if (name) nameInput.value = name })
+
+  // ── Team selector ──────────────────────────────────────────────────────────
+  document.querySelectorAll('.team-pick-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedTeam = Number(btn.dataset.team)
+      document.querySelectorAll('.team-pick-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      joinBtn.className = `join-btn team-${TEAM_CLASS[selectedTeam]}`
+    })
+  })
+
+  // ── Join ───────────────────────────────────────────────────────────────────
+  joinBtn.addEventListener('click', doJoin)
+  nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') doJoin() })
+
+  function doJoin() {
+    const name = nameInput.value.trim()
+    if (!name) { nameInput.focus(); return }
+    playerName = name
+    saveName(name)
+    joined = true
+    joinBtn.disabled = true
+    sendMsg({ type: 'hello', name, team: selectedTeam })
+  }
+
+  // ── Lobby ──────────────────────────────────────────────────────────────────
+  function enterLobby(readyData) {
+    clearVoteTimer()
+    isReady = false
+    hasVoted = false
+    readyBtn.textContent = 'READY UP'
+    readyBtn.classList.remove('done')
+
+    const tc = TEAM_CLASS[player]
+    teamBadge.className  = `team-badge ${tc}`
+    teamBadge.textContent = TEAM_LABEL[player]
+    readyBtn.className   = `ready-btn ${tc}`
+
+    const other = player === 1 ? 2 : 1
+    document.querySelectorAll('.vote-card').forEach(c => c.classList.remove('selected','blue','red'))
+    document.getElementById('voteMsg').textContent = 'TAP A MAP TO VOTE'
+    document.getElementById('voteMsg').classList.remove('voted')
+    updateOtherTeamStatus(0)
+    showScreen('lobbyScreen')
+  }
+
+  function updateOtherTeamStatus(otherCount) {
+    const other = player === 1 ? 2 : 1
+    otherTeamStatus.textContent = otherCount > 0
+      ? `✓ ${TEAM_LABEL[other]} (${otherCount} player${otherCount > 1 ? 's' : ''}) connected`
+      : `waiting for ${TEAM_LABEL[other]}…`
+    otherTeamStatus.className = 'other-team-status' + (otherCount > 0 ? ' has-players' : '')
+  }
+
+  readyBtn.addEventListener('click', () => {
+    if (isReady) return
+    isReady = true
+    readyBtn.textContent = 'WAITING…'
+    readyBtn.classList.add('done')
+    sendMsg({ type: 'ready_up', player })
+  })
+
+  // ── Vote ───────────────────────────────────────────────────────────────────
+  function enterVote(countdown) {
+    clearVoteTimer()
+    hasVoted = false
+    document.querySelectorAll('.vote-card').forEach(c => c.classList.remove('selected','blue','red'))
+    const voteMsg = document.getElementById('voteMsg')
+    voteMsg.textContent = 'TAP A MAP TO VOTE'
+    voteMsg.classList.remove('voted')
+    const voteWho = document.getElementById('voteWho')
+    voteWho.textContent = `VOTING AS ${player === 1 ? 'BLUE' : 'RED'}`
+    voteWho.style.color = TEAM_COLOR[player]
+    let secs = Math.max(1, countdown ?? 10)
+    const cdEl = document.getElementById('voteCountdown')
+    cdEl.textContent = secs
+    cdEl.classList.remove('urgent')
+    voteTimer = setInterval(() => {
+      secs--
+      cdEl.textContent = Math.max(0, secs)
+      if (secs <= 3) cdEl.classList.add('urgent')
+      if (secs <= 0) clearVoteTimer()
+    }, 1000)
+    showScreen('voteScreen')
+  }
+
+  function clearVoteTimer() { clearInterval(voteTimer); voteTimer = null }
+
+  document.querySelectorAll('.vote-card').forEach(card => {
+    const idx = Number(card.dataset.idx)
+    const doVote = e => {
+      e.preventDefault()
+      if (hasVoted) return
+      hasVoted = true
+      card.classList.add('selected', TEAM_CLASS[player])
+      const voteMsg = document.getElementById('voteMsg')
+      voteMsg.textContent = `✓ ${player === 1 ? 'BLUE' : 'RED'} VOTED`
+      voteMsg.classList.add('voted')
+      sendMsg({ type: 'vote_map', player, mapIdx: idx })
+    }
+    card.addEventListener('touchstart', doVote, { passive: false })
+    card.addEventListener('mousedown', doVote)
+  })
+
+  // ── Game screen setup ──────────────────────────────────────────────────────
+  function setupGameScreen() {
+    gameScreen.className = `screen ${GAME_CLASS[player]}`
+    gameTeamLabel.style.color = TEAM_COLOR[player]
+    gameTeamLabel.textContent = TEAM_LABEL[player]
+  }
+
+  // ── Fire grid (8-directional shoot) ─────────────────────────────────────────
+  fireBtns.forEach(btn => {
+    const dx = Number(btn.dataset.dx), dy = Number(btn.dataset.dy)
+    const fireDir = e => {
+      e.preventDefault()
+      if (cooling) return
+      btn.classList.add('pressed')
+      sendMsg({ type: 'shoot', player, dx, dy })
+      cooling = true
+      fireBtns.forEach(b => b.classList.add('cooling'))
+      setTimeout(() => { fireBtns.forEach(b => b.classList.remove('cooling')); cooling = false }, 1000)
+    }
+    const releaseDir = e => { e.preventDefault(); btn.classList.remove('pressed') }
+    btn.addEventListener('touchstart',  fireDir,    { passive: false })
+    btn.addEventListener('touchend',    releaseDir, { passive: false })
+    btn.addEventListener('touchcancel', releaseDir, { passive: false })
+    btn.addEventListener('mousedown',   fireDir)
+    btn.addEventListener('mouseup',     releaseDir)
+    btn.addEventListener('mouseleave',  releaseDir)
+  })
+
+  // ── Knife button ──────────────────────────────────────────────────────────
+  const fireKnife    = e => { e.preventDefault(); knifeBtn.classList.add('pressed'); sendMsg({ type: 'knife', player }) }
+  const releaseKnife = e => { e.preventDefault(); knifeBtn.classList.remove('pressed') }
+  knifeBtn.addEventListener('touchstart',  fireKnife,    { passive: false })
+  knifeBtn.addEventListener('touchend',    releaseKnife, { passive: false })
+  knifeBtn.addEventListener('touchcancel', releaseKnife, { passive: false })
+  knifeBtn.addEventListener('mousedown',   fireKnife)
+  knifeBtn.addEventListener('mouseup',     releaseKnife)
+  knifeBtn.addEventListener('mouseleave',  releaseKnife)
+
+  // ── WebSocket ──────────────────────────────────────────────────────────────
+  function sendMsg(obj) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj))
+  }
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    ws = new WebSocket(`${proto}//${location.host}`)
+
+    ws.onopen = () => {
+      updateConnected(true)
+      joinBtn.disabled = false
+      if (joined) sendMsg({ type: 'hello', name: playerName, team: selectedTeam })
+    }
+    ws.onclose = () => { updateConnected(false); setTimeout(connect, 2000) }
+    ws.onerror = () => ws.close()
+
+    ws.onmessage = e => {
+      try {
+        const m = JSON.parse(e.data)
+
+        if (m.type === 'assigned') {
+          player = m.player
+          setupGameScreen()
+          updateConnected(true)
+          return
+        }
+
+        if (m.type !== 'game_phase') return
+
+        if (m.phase === 'lobby')   enterLobby(m.ready)
+        else if (m.phase === 'vote') enterVote(m.countdown)
+        else if (m.phase === 'playing' || m.phase === 'gameover') {
+          clearVoteTimer()
+          setupGameScreen()
+          showScreen('gameScreen')
+        }
+      } catch {}
+    }
+  }
+  connect()
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { fireBtns.forEach(b => b.classList.remove('cooling')); cooling = false }
+  })
+</script>
+</body>
+</html>

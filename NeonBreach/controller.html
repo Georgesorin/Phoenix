@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover"/>
+  <title>Neon Breach</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #050510; color: #eee;
+      font-family: 'Courier New', monospace;
+      overflow: hidden; touch-action: none;
+    }
+
+    .screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100dvh;
+      padding: 20px 16px;
+      gap: 16px;
+    }
+    .screen.active { display: flex; }
+
+    .status { position:fixed; top:12px; left:16px; display:flex; align-items:center; gap:8px; font-size:11px; color:#444; }
+    .dot { width:8px; height:8px; border-radius:50%; background:#ff4444; transition:background .3s; }
+    .dot.on { background:#cc00ff; }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
+
+    .title { font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #cc00ff; text-align: center; }
+    .subtitle { font-size: 11px; color: #555; letter-spacing: 3px; text-align: center; }
+
+    .start-btn {
+      padding: 18px 40px; border-radius: 12px;
+      border: 2px solid #cc00ff; background: #1a0028; color: #cc00ff;
+      font-family: inherit; font-size: 16px; font-weight: bold; letter-spacing: 4px;
+      cursor: pointer; animation: pulse 1.5s infinite;
+    }
+    .start-btn:active { transform: scale(.97); }
+
+    /* HUD */
+    .hud { text-align: center; width: 100%; }
+    .boss-bar { width: 80%; height: 10px; background: #1a0000; border-radius: 5px; overflow: hidden; margin: 8px auto; }
+    .boss-fill { height: 100%; background: #cc00ff; transition: width .1s; }
+    .hearts { font-size: 28px; margin: 8px 0; }
+    .heart-on { color: #cc00ff; }
+    .heart-off { color: #1a1a1a; }
+    .phase-label { font-size: 14px; letter-spacing: 3px; margin-top: 8px; }
+    .bp-tracking { color: #00ff00; }
+    .bp-lockon { color: #ff8800; animation: blink .4s infinite; }
+    .bp-firing { color: #ff0000; animation: blink .15s infinite; }
+    .lava-warn { color: #ff4400; font-size: 14px; letter-spacing: 3px; animation: blink .5s infinite; margin: 8px 0; }
+    .charge-info { font-size: 11px; color: #0088ff; letter-spacing: 2px; margin-top: 8px; }
+    .room-label { font-size: 12px; color: #666; letter-spacing: 2px; }
+
+    /* VOTE */
+    .vote-title { font-size: 18px; color: #cc00ff; letter-spacing: 3px; }
+    .vote-options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 320px; }
+    .vote-btn {
+      width: 100%; padding: 18px 12px;
+      border-radius: 12px; border: 2px solid #333;
+      background: #111; color: #aaa;
+      font-family: inherit; font-size: 14px;
+      text-align: left; cursor: pointer; transition: all .15s;
+    }
+    .vote-btn .vname { font-weight: bold; letter-spacing: 2px; }
+    .vote-btn .vdesc { font-size: 11px; color: #555; margin-top: 4px; }
+    .vote-btn.selected { border-color: #cc00ff; background: #1a0028; color: #cc00ff; }
+    .vote-btn:active { transform: scale(.98); }
+
+    .result-title { font-size: 26px; font-weight: bold; letter-spacing: 5px; }
+    .result-sub { font-size: 12px; color: #555; letter-spacing: 2px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+
+<div class="status"><div class="dot" id="dot"></div><span id="connLabel">connecting…</span></div>
+
+<!-- LOBBY -->
+<div id="lobbyScreen" class="screen active">
+  <div class="title">NEON BREACH</div>
+  <div class="subtitle">COOPERATIVE BOSS FIGHT</div>
+  <div style="color:#666; font-size:11px; margin-top:12px">Stand on the floor tiles to play</div>
+  <button class="start-btn" id="startBtn">START RAID</button>
+</div>
+
+<!-- GAME HUD -->
+<div id="gameScreen" class="screen">
+  <div class="room-label" id="roomLabel">ROOM 1</div>
+  <div class="hud">
+    <div style="color:#cc00ff; font-size:11px; letter-spacing:2px">BOSS</div>
+    <div class="boss-bar"><div class="boss-fill" id="bossFill" style="width:100%"></div></div>
+    <div style="color:#888; font-size:10px" id="bossHpText">100/100</div>
+  </div>
+  <div class="phase-label" id="bossPhaseLabel"></div>
+  <div class="hearts" id="hearts"></div>
+  <div style="color:#888; font-size:10px; letter-spacing:2px">TEAM HP</div>
+  <div id="lavaWarn" class="lava-warn" style="display:none">LAVA — FIND SAFE ZONES</div>
+  <div class="charge-info" id="chargeInfo"></div>
+</div>
+
+<!-- VOTE -->
+<div id="voteScreen" class="screen">
+  <div class="vote-title" id="voteTitle">CHOOSE</div>
+  <div class="subtitle" id="voteSub">tap to vote</div>
+  <div class="vote-options" id="voteOptions"></div>
+</div>
+
+<!-- RESULT -->
+<div id="resultScreen" class="screen">
+  <div class="result-title" id="resultTitle"></div>
+  <div class="result-sub" id="resultSub"></div>
+</div>
+
+<script>
+  let ws = null
+
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
+    document.getElementById(id).classList.add('active')
+  }
+
+  function updateConnected(on) {
+    document.getElementById('dot').classList.toggle('on', on)
+    document.getElementById('connLabel').textContent = on ? 'connected' : 'reconnecting…'
+  }
+
+  function sendMsg(obj) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj))
+  }
+
+  document.getElementById('startBtn').addEventListener('click', () => {
+    sendMsg({ type: 'nb_start' })
+  })
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    ws = new WebSocket(`${proto}//${location.host}`)
+
+    ws.onopen = () => updateConnected(true)
+    ws.onclose = () => { updateConnected(false); setTimeout(connect, 2000) }
+    ws.onerror = () => ws.close()
+
+    ws.onmessage = e => {
+      try {
+        const m = JSON.parse(e.data)
+
+        if (m.type === 'nb_phase') {
+          if (m.phase === 'nb_lobby') {
+            showScreen('lobbyScreen')
+          } else if (m.phase === 'nb_playing') {
+            showScreen('gameScreen')
+            document.getElementById('roomLabel').textContent =
+              m.isFinal ? 'FINAL BOSS' : `ROOM ${(m.room || 0) + 1}`
+          } else if (m.phase === 'nb_loot_vote') {
+            showVote('CHOOSE UPGRADE', 'tap to vote', m.options, 'nb_vote_loot')
+          } else if (m.phase === 'nb_dir_vote') {
+            showVote('CHOOSE PATH', 'pick direction', [
+              { name: 'LEFT — FAST', desc: 'More attacks, less HP', color: '#ff4444' },
+              { name: 'FORWARD', desc: 'Balanced', color: '#ffff44' },
+              { name: 'RIGHT — TANK', desc: 'Fewer attacks, more HP', color: '#0088ff' },
+            ], 'nb_vote_dir', ['left', 'forward', 'right'])
+          } else if (m.phase === 'nb_next_room') {
+            showScreen('resultScreen')
+            document.getElementById('resultTitle').textContent = `ROOM ${(m.room || 0) + 1}`
+            document.getElementById('resultTitle').style.color = '#cc00ff'
+            document.getElementById('resultSub').textContent = `heading ${m.dir}…`
+          } else if (m.phase === 'nb_gameover') {
+            showScreen('resultScreen')
+            document.getElementById('resultTitle').textContent = 'DEFEATED'
+            document.getElementById('resultTitle').style.color = '#ff0000'
+            document.getElementById('resultSub').textContent = `reached room ${(m.room || 0) + 1}`
+          } else if (m.phase === 'nb_victory') {
+            showScreen('resultScreen')
+            document.getElementById('resultTitle').textContent = 'VICTORY!'
+            document.getElementById('resultTitle').style.color = '#00ff41'
+            document.getElementById('resultSub').textContent = 'all bosses defeated'
+          }
+          return
+        }
+
+        if (m.type === 'nb_frame') {
+          // Update HUD from frame data
+          if (m.boss) {
+            const pct = m.boss.maxHp > 0 ? (m.boss.hp / m.boss.maxHp) * 100 : 0
+            document.getElementById('bossFill').style.width = pct + '%'
+            document.getElementById('bossHpText').textContent = `${m.boss.hp}/${m.boss.maxHp}`
+
+            const label = document.getElementById('bossPhaseLabel')
+            if (m.boss.phase === 'tracking') { label.textContent = 'TRACKING'; label.className = 'phase-label bp-tracking' }
+            else if (m.boss.phase === 'lockon') { label.textContent = 'LOCK ON!'; label.className = 'phase-label bp-lockon' }
+            else if (m.boss.phase === 'firing') { label.textContent = 'FIRE!!'; label.className = 'phase-label bp-firing' }
+            else { label.textContent = ''; label.className = 'phase-label' }
+          }
+
+          if (m.teamHp !== undefined && m.maxHp !== undefined) {
+            document.getElementById('hearts').innerHTML =
+              Array.from({ length: m.maxHp }, (_, i) =>
+                `<span class="${i < m.teamHp ? 'heart-on' : 'heart-off'}">&#9829;</span>`
+              ).join('')
+          }
+
+          document.getElementById('lavaWarn').style.display = m.lavaActive ? '' : 'none'
+
+          if (m.chargeZones) {
+            document.getElementById('chargeInfo').innerHTML = m.chargeZones.map((z, i) => {
+              const pct = Math.min(100, Math.round((z.chargeLevel / z.chargeFull) * 100))
+              return `Z${i + 1}: ${pct}%`
+            }).join(' &middot; ')
+          }
+          return
+        }
+      } catch {}
+    }
+  }
+  connect()
+
+  function showVote(title, sub, options, msgType, choiceKeys) {
+    showScreen('voteScreen')
+    document.getElementById('voteTitle').textContent = title
+    document.getElementById('voteSub').textContent = sub
+    const container = document.getElementById('voteOptions')
+    container.innerHTML = ''
+    let voted = false
+    options.forEach((opt, idx) => {
+      const btn = document.createElement('button')
+      btn.className = 'vote-btn'
+      btn.innerHTML = `<div class="vname" style="color:${opt.color || '#cc00ff'}">${opt.name}</div><div class="vdesc">${opt.desc || ''}</div>`
+      const doVote = e => {
+        e.preventDefault()
+        if (voted) return
+        voted = true
+        btn.classList.add('selected')
+        const choice = choiceKeys ? choiceKeys[idx] : idx
+        sendMsg({ type: msgType, choice })
+      }
+      btn.addEventListener('touchstart', doVote, { passive: false })
+      btn.addEventListener('mousedown', doVote)
+      container.appendChild(btn)
+    })
+  }
+</script>
+</body>
+</html>

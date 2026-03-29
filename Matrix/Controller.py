@@ -29,8 +29,8 @@ _CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "matrix_ctr
 def _load_config():
     defaults = {
         "device_ip": "255.255.255.255",
-        "send_port": 4626,
-        "recv_port": 7800,
+        "send_port": 3002,
+        "recv_port": 3003,
         "auto_start_streaming": False,
         "last_used_ports": []
     }
@@ -71,7 +71,7 @@ class NetworkManager:
         self.sequence_number = 0
         self.bind_ip = "0.0.0.0"
         self.target_ip = CONFIG.get("device_ip", "255.255.255.255")
-        self.send_port = CONFIG.get("send_port", 4626)
+        self.send_port = CONFIG.get("send_port", 3002)
         
         # Priority: Auto-detecting 169.254 (for hardware)
 
@@ -269,8 +269,8 @@ class MatrixGUI:
         self.trigger_states = {}
         
         # Initialize port variables BEFORE binding
-        self.port_out_var = tk.StringVar(value=str(CONFIG.get("send_port", 4626)))
-        self.port_in_var = tk.StringVar(value=str(CONFIG.get("recv_port", 7800)))
+        self.port_out_var = tk.StringVar(value=str(CONFIG.get("send_port", 3002)))
+        self.port_in_var = tk.StringVar(value=str(CONFIG.get("recv_port", 3003)))
 
         self.receiver_running = True
         self.sock_recv = None
@@ -703,8 +703,8 @@ class ConfigDialog(tk.Toplevel):
         self.on_save = on_save
 
         self.sv_ip   = tk.StringVar(value=cfg.get("device_ip", "255.255.255.255"))
-        self.sv_send = tk.StringVar(value=str(cfg.get("send_port", 4626)))
-        self.sv_recv = tk.StringVar(value=str(cfg.get("recv_port", 7800)))
+        self.sv_send = tk.StringVar(value=str(cfg.get("send_port", 3002)))
+        self.sv_recv = tk.StringVar(value=str(cfg.get("recv_port", 3003)))
         self.sv_auto_stream = tk.BooleanVar(value=cfg.get("auto_start_streaming", False))
         self.sv_iface = tk.StringVar(value="0.0.0.0")
 
@@ -775,7 +775,7 @@ class ConfigDialog(tk.Toplevel):
         iface = self.sv_iface.get()
         try:
             port = int(self.sv_send.get())
-        except: port = 4626
+        except: port = 3002
         
         self.lbl_disc.config(text="Scanning...", fg="#ffaa00")
         

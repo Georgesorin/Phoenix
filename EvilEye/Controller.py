@@ -5,8 +5,8 @@ Communicates with the Evil Eye hardware (or its simulator) using the same
 UDP protocol as the original C# application.
 
 Ports used:
-  Send light commands → device UDP :4626
-  Receive button events ← device UDP :7800
+  Send light commands → device UDP :3002
+  Receive button events ← device UDP :3003
 """
 
 import json
@@ -24,8 +24,8 @@ import struct
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
 CONFIG_FILE        = os.path.join(os.path.dirname(__file__), "eye_ctrl_config.json")
-UDP_DEVICE_PORT    = 4626   # send light commands to device
-UDP_RECEIVER_PORT  = 7800   # listen for button events from device
+UDP_DEVICE_PORT    = 3002   # send light commands to device
+UDP_RECEIVER_PORT  = 3003   # listen for button events from device
 NUM_CHANNELS       = 4
 LEDS_PER_CHANNEL   = 11     # 0 = Eye, 1-10 = Buttons
 FRAME_DATA_LEN     = LEDS_PER_CHANNEL * NUM_CHANNELS * 3   # 132 bytes
@@ -157,8 +157,8 @@ class LightService:
     """
     def __init__(self):
         self._device_ip   = None
-        self._device_port = 4626
-        self._recv_port   = 7800
+        self._device_port = 3002
+        self._recv_port   = 3003
         self._seq         = 0
         self._led_states  = {}        # (channel, led) -> (r, g, b)
         self._lock        = threading.Lock()
@@ -248,7 +248,7 @@ class LightService:
             self._poll_stop.wait(self._poll_rate / 1000.0)
 
     # ── Public LED API (UI thread safe) ───────────────────────────────────────
-    def set_device(self, ip: str, port: int = 4626):
+    def set_device(self, ip: str, port: int = 3002):
         self._device_ip = ip
         self._device_port = port
         self._log(f"Device target set to {ip}:{port}")
@@ -403,9 +403,9 @@ class LightService:
         except:
             pass
         # Simple approach: broadcast on 255.255.255.255
-        self._log(f"Sending discovery to 255.255.255.255:4626")
+        self._log(f"Sending discovery to 255.255.255.255:3002")
         try:
-            sock.sendto(bytes(pkt), ("255.255.255.255", 4626))
+            sock.sendto(bytes(pkt), ("255.255.255.255", 3002))
         except Exception as e:
             self._log(f"Discovery send error: {e}")
 
@@ -435,8 +435,8 @@ class LightService:
 # ─────────────────────────────────────────────────────────────────────────────
 DEFAULT_CONFIG = {
     "device_ip": "",
-    "udp_port": 4626,
-    "receiver_port": 7800,
+    "udp_port": 3002,
+    "receiver_port": 3003,
     "polling_rate_ms": 100,
     "auto_connect": True, # This is effectively replaced by auto_start_receiver and auto_start_streaming
     "auto_start_receiver": True,
@@ -500,9 +500,9 @@ class LightControlApp(tk.Tk):
         self._service.on_button_state = self._on_button_state
 
         if self._cfg.get("device_ip"):
-            self._service.set_device(self._cfg["device_ip"], self._cfg.get("udp_port", 4626))
-        
-        self._service.set_recv_port(self._cfg.get("receiver_port", 7800))
+            self._service.set_device(self._cfg["device_ip"], self._cfg.get("udp_port", 3002))
+
+        self._service.set_recv_port(self._cfg.get("receiver_port", 3003))
 
         if self._cfg.get("virtual_iface_ip"):
             self._service.set_bind_ip(self._cfg["virtual_iface_ip"])
@@ -896,9 +896,9 @@ class LightControlApp(tk.Tk):
         self._cfg = new_cfg
         save_config(new_cfg)
         if new_cfg.get("device_ip"):
-            self._service.set_device(new_cfg["device_ip"], new_cfg.get("udp_port", 4626))
+            self._service.set_device(new_cfg["device_ip"], new_cfg.get("udp_port", 3002))
             self._lbl_device.configure(text=f"Device: {new_cfg['device_ip']}", fg="#0f0")
-        self._service.set_recv_port(new_cfg.get("receiver_port", 7800))
+        self._service.set_recv_port(new_cfg.get("receiver_port", 3003))
         self._service.set_poll_rate(new_cfg.get("polling_rate_ms", 100))
         self._log("Configuration saved")
 
@@ -1062,8 +1062,8 @@ class ConfigDialog(tk.Toplevel):
 
     def _save(self):
         self._cfg["device_ip"]          = self._sv_ip.get().strip()
-        self._cfg["udp_port"]           = int(self._sv_udp.get() or 4626)
-        self._cfg["receiver_port"]      = int(self._sv_recv.get() or 7800)
+        self._cfg["udp_port"]           = int(self._sv_udp.get() or 3002)
+        self._cfg["receiver_port"]      = int(self._sv_recv.get() or 3003)
         self._cfg["polling_rate_ms"]    = max(10, int(self._sv_poll.get() or 100))
         self._cfg["auto_start_streaming"] = self._sv_auto_stream.get()
         self._on_save(self._cfg)

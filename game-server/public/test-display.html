@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head><title>Display Test</title></head>
+<body style="background:#111;color:#0f0;font-family:monospace;padding:20px">
+<h2>Display Pipeline Test</h2>
+<div id="status">Connecting...</div>
+<script>
+const log = msg => { document.getElementById('status').innerHTML += '<br>' + msg; console.log(msg); }
+
+const ws = new WebSocket('ws://localhost:3001')
+ws.onopen = () => {
+  ws.send(JSON.stringify({ type: 'display_connect' }))
+  log('✓ WebSocket connected, sent display_connect')
+  startFrames()
+}
+ws.onerror = e => log('✗ WebSocket error: ' + e)
+ws.onclose = () => log('WebSocket closed')
+
+function makeGrid() {
+  const t = Date.now() / 200
+  const grid = []
+  for (let y = 0; y < 32; y++) {
+    const row = []
+    for (let x = 0; x < 16; x++) {
+      const v = Math.sin(x / 3 + t) * Math.cos(y / 4 + t)
+      if (v > 0.3) row.push('#ff0000')
+      else if (v > 0) row.push('#004400')
+      else row.push('#000000')
+    }
+    grid.push(row)
+  }
+  return grid
+}
+
+function startFrames() {
+  let count = 0
+  setInterval(() => {
+    if (ws.readyState !== 1) return
+    ws.send(JSON.stringify({ type: 'sim_frame', grid: makeGrid() }))
+    count++
+    if (count % 10 === 0) log('Sent ' + count + ' frames')
+  }, 100)
+}
+</script>
+</body>
+</html>

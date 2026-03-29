@@ -23,8 +23,8 @@ _CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tetris_con
 def _load_config():
     defaults = {
         "device_ip": "255.255.255.255",
-        "send_port": 4626,
-        "recv_port": 7800,
+        "send_port": 3002,
+        "recv_port": 3003,
         "bind_ip": "0.0.0.0"
     }
     try:
@@ -38,8 +38,8 @@ CONFIG = _load_config()
 
 # --- Networking Constants ---
 UDP_SEND_IP = CONFIG.get("device_ip", "255.255.255.255")
-UDP_SEND_PORT = CONFIG.get("send_port", 4626)
-UDP_LISTEN_PORT = CONFIG.get("recv_port", 7800)
+UDP_SEND_PORT = CONFIG.get("send_port", 3002)
+UDP_LISTEN_PORT = CONFIG.get("recv_port", 3003)
 
 # --- Matrix Constants ---
 NUM_CHANNELS = 8

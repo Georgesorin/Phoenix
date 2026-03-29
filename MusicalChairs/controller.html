@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover"/>
+  <title>Musical Chairs Controller</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #080808; color: #eee;
+      font-family: 'Courier New', monospace;
+      overflow: hidden; touch-action: none;
+    }
+
+    .screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      height: 100dvh;
+      padding: 20px 16px max(env(safe-area-inset-bottom), 20px);
+      gap: 12px;
+    }
+    .screen.active { display: flex; }
+
+    .status { display:flex; align-items:center; gap:8px; font-size:11px; color:#444; align-self:stretch; }
+    .dot { width:8px; height:8px; border-radius:50%; background:#ff4444; transition:background .3s; }
+    .dot.on { background:#00ff41; }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
+
+    /* ════ JOIN SCREEN ════ */
+    #joinScreen { justify-content: center; gap: 20px; }
+
+    .join-title {
+      font-size: 22px; font-weight: bold;
+      letter-spacing: 4px; color: #00ff41;
+      text-align: center; line-height: 1.4;
+    }
+    .join-title small {
+      display: block; font-size: 11px;
+      letter-spacing: 2px; color: #444; margin-top: 4px;
+    }
+
+    .name-input {
+      width: 100%; padding: 16px 14px;
+      background: #111; border: 2px solid #333;
+      border-radius: 10px; color: #eee;
+      font-family: inherit; font-size: 18px;
+      letter-spacing: 2px; text-align: center;
+      outline: none; transition: border-color .15s;
+      -webkit-appearance: none;
+    }
+    .name-input:focus { border-color: #555; }
+    .name-input::placeholder { color: #333; }
+
+    /* Color picker */
+    .color-label {
+      font-size: 11px; letter-spacing: 2px; color: #444; align-self: flex-start;
+    }
+    .color-swatches {
+      display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+    }
+    .color-swatch {
+      width: 44px; height: 44px; border-radius: 8px;
+      border: 3px solid transparent;
+      cursor: pointer; transition: transform .1s, border-color .1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .color-swatch.selected { border-color: #fff; transform: scale(1.12); }
+    .color-swatch:active { transform: scale(.95); }
+
+    .join-btn {
+      width: 100%; padding: 20px 0;
+      border-radius: 12px; border: 2px solid #333;
+      background: #111; color: #555;
+      font-family: inherit; font-size: 16px;
+      font-weight: bold; letter-spacing: 4px;
+      cursor: pointer; transition: all .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .join-btn.colored { border-color: var(--pc); color: var(--pc); background: #0a0a0a; }
+    .join-btn:active { transform: scale(.97); }
+    .join-btn:disabled { opacity: .3; pointer-events: none; }
+
+    /* ════ LOBBY SCREEN ════ */
+    #lobbyScreen { justify-content: center; gap: 24px; }
+
+    .lobby-title {
+      font-size: 18px; font-weight: bold;
+      letter-spacing: 4px; color: #00ff41;
+      text-align: center;
+    }
+
+    .player-badge {
+      padding: 16px 28px; border-radius: 14px;
+      border: 2px solid var(--pc, #00ff41);
+      color: var(--pc, #00ff41);
+      background: #0a0a0a;
+      font-size: 18px; font-weight: bold;
+      letter-spacing: 2px; text-align: center;
+    }
+
+    .lobby-hint {
+      font-size: 12px; color: #333;
+      letter-spacing: 1px; text-align: center;
+      line-height: 1.6;
+    }
+
+    /* ════ GAME SCREEN ════ */
+    #gameScreen { justify-content: center; gap: 0; padding: 12px 12px max(env(safe-area-inset-bottom),12px); }
+
+    .phase-bar {
+      font-size: 13px; font-weight: bold; letter-spacing: 2px;
+      text-align: center; padding: 8px 12px; border-radius: 8px;
+      width: 100%; flex-shrink: 0; margin-bottom: 8px;
+      transition: background .3s, color .3s;
+    }
+    .phase-bar.music   { background: rgba(255,60,0,.12); border: 1px solid #ff3c00; color: #ff8866; animation: blink 1.2s infinite; }
+    .phase-bar.rush    { background: rgba(255,255,255,.08); border: 1px solid #fff; color: #fff; animation: pulse .5s infinite; }
+    .phase-bar.waiting { background: #111; border: 1px solid #222; color: #444; }
+    .phase-bar.over    { background: rgba(0,255,65,.08); border: 1px solid #00ff41; color: #00ff41; }
+
+    /* D-pad */
+    .dpad-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+    }
+    .dpad {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: 1fr 1fr 1fr;
+      gap: 8px;
+      width: min(82vw, 56vh);
+      aspect-ratio: 1;
+    }
+    .dpad-btn {
+      border-radius: 14px;
+      border: 2px solid #1e1e1e;
+      background: #121212;
+      font-size: 28px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none; touch-action: none;
+      transition: background .06s, border-color .06s, transform .06s;
+      color: #2a2a2a;
+    }
+    .dpad-btn.active {
+      border-color: var(--pc, #00ff41);
+      color: var(--pc, #00ff41);
+      background: #0d0d0d;
+      transform: scale(.93);
+    }
+    .dpad-center {
+      border-radius: 14px;
+      background: #0d0d0d;
+      border: 2px solid #1a1a1a;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+
+    /* Position each button in the cross */
+    .btn-up    { grid-column: 2; grid-row: 1; }
+    .btn-left  { grid-column: 1; grid-row: 2; }
+    .btn-center{ grid-column: 2; grid-row: 2; }
+    .btn-right { grid-column: 3; grid-row: 2; }
+    .btn-down  { grid-column: 2; grid-row: 3; }
+    /* corners are empty — let them take up space naturally via grid */
+
+    .game-hint {
+      font-size: 10px; color: #222; text-align: center; flex-shrink: 0; padding-top: 4px;
+    }
+
+    /* ════ GAMEOVER SCREEN ════ */
+    #gameoverScreen { justify-content: center; gap: 24px; }
+
+    .go-title {
+      font-size: 22px; font-weight: bold; letter-spacing: 4px;
+      text-align: center;
+    }
+    .go-trophy { font-size: 64px; line-height: 1; }
+    .go-msg { font-size: 14px; color: #444; letter-spacing: 2px; text-align: center; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════ JOIN ══════════════════ -->
+<div class="screen active" id="joinScreen">
+  <div class="status">
+    <div class="dot" id="dot"></div>
+    <span id="stxt">Connecting…</span>
+  </div>
+
+  <div class="join-title">
+    MUSICAL CHAIRS
+    <small>LEDHACK</small>
+  </div>
+
+  <input
+    class="name-input" id="nameInput"
+    type="text" maxlength="12"
+    placeholder="your name"
+    autocomplete="off" autocorrect="off" spellcheck="false"
+  />
+
+  <div class="color-label">PICK YOUR COLOR</div>
+  <div class="color-swatches" id="colorSwatches"></div>
+
+  <button class="join-btn" id="joinBtn" disabled>JOIN GAME</button>
+
+  <div style="font-size:10px;color:#333;text-align:center">enter name · pick color · tap join</div>
+</div>
+
+<!-- ══════════════════ LOBBY ══════════════════ -->
+<div class="screen" id="lobbyScreen">
+  <div class="status">
+    <div class="dot on" id="dot2"></div>
+    <span id="stxt2">Connected</span>
+  </div>
+
+  <div class="lobby-title">MUSICAL CHAIRS</div>
+
+  <div class="player-badge" id="playerBadge">YOU</div>
+
+  <div class="lobby-hint">
+    Waiting for the host<br>to start the game…
+  </div>
+
+  <div style="font-size:10px;color:#222">stay on this screen</div>
+</div>
+
+<!-- ══════════════════ GAME ══════════════════ -->
+<div class="screen" id="gameScreen">
+  <div class="phase-bar waiting" id="phaseBar">WAITING…</div>
+
+  <div class="dpad-wrap">
+    <div class="dpad">
+      <!-- empty corners filled by grid auto-placement -->
+      <div></div>
+      <button class="dpad-btn btn-up"    data-dir="up">↑</button>
+      <div></div>
+      <button class="dpad-btn btn-left"  data-dir="left">←</button>
+      <div class="dpad-center btn-center" id="dpadCenter">🪑</div>
+      <button class="dpad-btn btn-right" data-dir="right">→</button>
+      <div></div>
+      <button class="dpad-btn btn-down"  data-dir="down">↓</button>
+      <div></div>
+    </div>
+  </div>
+
+  <div class="game-hint">hold to move · reach a chair when music stops</div>
+</div>
+
+<!-- ══════════════════ GAMEOVER ══════════════════ -->
+<div class="screen" id="gameoverScreen">
+  <div class="status">
+    <div class="dot on"></div>
+    <span>Game Over</span>
+  </div>
+  <div class="go-title" id="goTitle" style="color:#00ff41">GAME OVER</div>
+  <div class="go-trophy" id="goTrophy">🏆</div>
+  <div class="go-msg" id="goMsg">waiting for next round…</div>
+</div>
+
+<script type="module">
+  import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
+  import { getFirestore, doc, getDoc, setDoc, serverTimestamp }
+                               from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+
+  // ── Firebase ───────────────────────────────────────────────────────────────
+  const fbApp = initializeApp({
+    apiKey:            'AIzaSyBxkAtcOluZ3pyXmGvSASEJJH4Lmz_3UCM',
+    authDomain:        'prosol-cat24.firebaseapp.com',
+    projectId:         'prosol-cat24',
+    storageBucket:     'prosol-cat24.firebasestorage.app',
+    messagingSenderId: '45158606215',
+    appId:             '1:45158606215:web:bfbebe4b1effc38686df22',
+  })
+  const db = getFirestore(fbApp)
+
+  let deviceId = localStorage.getItem('mcDeviceId')
+  if (!deviceId) { deviceId = crypto.randomUUID(); localStorage.setItem('mcDeviceId', deviceId) }
+
+  async function loadSavedName() {
+    try {
+      const snap = await getDoc(doc(db, 'players', deviceId))
+      if (snap.exists() && snap.data().name) return snap.data().name
+    } catch {}
+    return localStorage.getItem('mcName') || ''
+  }
+
+  async function saveName(name) {
+    localStorage.setItem('mcName', name)
+    try { await setDoc(doc(db, 'players', deviceId), { name, lastSeen: serverTimestamp() }) } catch {}
+  }
+
+  // ── Colors ─────────────────────────────────────────────────────────────────
+  const COLORS = [
+    '#ff4444','#44ff44','#4488ff','#ffff44',
+    '#ff44ff','#44ffff','#ff8844','#ff44aa',
+  ]
+  let selectedColor = null
+
+  const swatchContainer = document.getElementById('colorSwatches')
+  COLORS.forEach(c => {
+    const el = document.createElement('div')
+    el.className = 'color-swatch'
+    el.style.background = c
+    el.addEventListener('click', () => {
+      document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'))
+      el.classList.add('selected')
+      selectedColor = c
+      document.documentElement.style.setProperty('--pc', c)
+      joinBtn.classList.add('colored')
+      updateJoinBtn()
+    })
+    swatchContainer.appendChild(el)
+  })
+
+  // ── Elements ───────────────────────────────────────────────────────────────
+  const joinScreen     = document.getElementById('joinScreen')
+  const lobbyScreen    = document.getElementById('lobbyScreen')
+  const gameScreen     = document.getElementById('gameScreen')
+  const gameoverScreen = document.getElementById('gameoverScreen')
+  const nameInput      = document.getElementById('nameInput')
+  const joinBtn        = document.getElementById('joinBtn')
+  const playerBadge    = document.getElementById('playerBadge')
+  const phaseBar       = document.getElementById('phaseBar')
+  const dpadCenter     = document.getElementById('dpadCenter')
+  const goTitle        = document.getElementById('goTitle')
+  const goTrophy       = document.getElementById('goTrophy')
+  const goMsg          = document.getElementById('goMsg')
+  const dot            = document.getElementById('dot')
+  const stxt           = document.getElementById('stxt')
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let myId       = null
+  let playerName = ''
+  let joined     = false
+  let ws         = null
+
+  function updateJoinBtn() {
+    const hasName  = nameInput.value.trim().length > 0
+    const hasColor = selectedColor !== null
+    joinBtn.disabled = !(hasName && hasColor)
+  }
+
+  nameInput.addEventListener('input', updateJoinBtn)
+  nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') doJoin() })
+
+  // ── Load saved name ────────────────────────────────────────────────────────
+  loadSavedName().then(name => {
+    if (name) { nameInput.value = name; updateJoinBtn() }
+  })
+
+  // ── Saved color ────────────────────────────────────────────────────────────
+  const savedColor = localStorage.getItem('mcColor')
+  if (savedColor && COLORS.includes(savedColor)) {
+    const idx = COLORS.indexOf(savedColor)
+    swatchContainer.children[idx].click()
+  }
+
+  // ── Screen helpers ─────────────────────────────────────────────────────────
+  function showScreen(id) {
+    for (const s of [joinScreen, lobbyScreen, gameScreen, gameoverScreen])
+      s.classList.remove('active')
+    document.getElementById(id).classList.add('active')
+  }
+
+  // ── Join ───────────────────────────────────────────────────────────────────
+  joinBtn.addEventListener('click', doJoin)
+
+  function doJoin() {
+    const name = nameInput.value.trim()
+    if (!name || !selectedColor) return
+    playerName = name
+    saveName(name)
+    localStorage.setItem('mcColor', selectedColor)
+    joined = true
+    joinBtn.disabled = true
+    sendMsg({ type: 'mc_join', name, color: selectedColor })
+  }
+
+  // ── D-pad ──────────────────────────────────────────────────────────────────
+  document.querySelectorAll('.dpad-btn').forEach(btn => {
+    const dir = btn.dataset.dir
+
+    const press = e => {
+      e.preventDefault()
+      btn.classList.add('active')
+      sendMsg({ type: 'mc_key', dir, down: true })
+    }
+    const release = e => {
+      e.preventDefault()
+      btn.classList.remove('active')
+      sendMsg({ type: 'mc_key', dir, down: false })
+    }
+
+    btn.addEventListener('touchstart',  press,   { passive: false })
+    btn.addEventListener('touchend',    release, { passive: false })
+    btn.addEventListener('touchcancel', release, { passive: false })
+    btn.addEventListener('mousedown',   press)
+    btn.addEventListener('mouseup',     release)
+    btn.addEventListener('mouseleave',  release)
+  })
+
+  // ── Phase handling ─────────────────────────────────────────────────────────
+  function handlePhase(m) {
+    if (m.phase === 'lobby') {
+      showScreen('lobbyScreen')
+      return
+    }
+
+    if (m.phase === 'music') {
+      showScreen('gameScreen')
+      phaseBar.className = 'phase-bar music'
+      phaseBar.textContent = 'MOVE! FLOOR IS LAVA'
+      return
+    }
+
+    if (m.phase === 'chairrush') {
+      showScreen('gameScreen')
+      phaseBar.className = 'phase-bar rush'
+      phaseBar.textContent = 'GRAB A CHAIR!'
+      return
+    }
+
+    if (m.phase === 'elimination') {
+      showScreen('gameScreen')
+      phaseBar.className = 'phase-bar waiting'
+      phaseBar.textContent = 'CHECKING CHAIRS…'
+      return
+    }
+
+    if (m.phase === 'gameover') {
+      const won = m.winner && m.winner === myId
+      goTitle.textContent  = won ? 'YOU WIN!' : 'GAME OVER'
+      goTitle.style.color  = won ? '#ffff44'  : '#ff4444'
+      goTrophy.textContent = won ? '🏆' : '💀'
+      goMsg.textContent    = 'waiting for next round…'
+      showScreen('gameoverScreen')
+      return
+    }
+  }
+
+  // ── WebSocket ──────────────────────────────────────────────────────────────
+  function sendMsg(obj) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj))
+  }
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    ws = new WebSocket(`${proto}//${location.host}`)
+
+    ws.onopen = () => {
+      dot.className = 'dot on'
+      stxt.textContent = 'Connected'
+      joinBtn.disabled = !(nameInput.value.trim() && selectedColor)
+      if (joined) sendMsg({ type: 'mc_join', name: playerName, color: selectedColor })
+    }
+
+    ws.onclose = () => {
+      dot.className = 'dot'
+      stxt.textContent = 'Reconnecting…'
+      setTimeout(connect, 2000)
+    }
+
+    ws.onerror = () => ws.close()
+
+    ws.onmessage = e => {
+      try {
+        const m = JSON.parse(e.data)
+
+        if (m.type === 'mc_assigned') {
+          myId = m.id
+          playerBadge.textContent = playerName
+          playerBadge.style.borderColor = selectedColor
+          playerBadge.style.color = selectedColor
+          dpadCenter.textContent = '●'
+          dpadCenter.style.color = selectedColor
+          showScreen('lobbyScreen')
+          return
+        }
+
+        if (m.type === 'mc_phase') {
+          handlePhase(m)
+          return
+        }
+      } catch {}
+    }
+  }
+  connect()
+
+  // Release all d-pad buttons when window loses focus
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      document.querySelectorAll('.dpad-btn.active').forEach(btn => {
+        btn.classList.remove('active')
+        sendMsg({ type: 'mc_key', dir: btn.dataset.dir, down: false })
+      })
+    }
+  })
+</script>
+</body>
+</html>
