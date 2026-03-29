@@ -60,11 +60,13 @@ try {
     path.join(__dirname, '..', 'matrix_sim_config.json'), 'utf8'
   ))
 } catch {}
-const SIM_TARGET_PORT = _simCfg.recv_port ?? 3002  // Simulator listens here  (we SEND frames)
-const SIM_LISTEN_PORT = _simCfg.send_port ?? 3003  // Simulator sends here    (we LISTEN)
+const SIM_TARGET_PORT = _simCfg.recv_port ?? 4626  // Simulator listens here  (we SEND frames)
+const SIM_LISTEN_PORT = _simCfg.send_port ?? 7800  // Simulator sends here    (we LISTEN)
+const SIM_DEVICE_IP = _simCfg.device_ip ?? '255.255.255.255'
 
 const simSock = dgram.createSocket('udp4')
 simSock.bind(SIM_LISTEN_PORT, () => {
+  simSock.setBroadcast(true)
   console.log(`  UDP bridge: target=:${SIM_TARGET_PORT}  listen=:${SIM_LISTEN_PORT}`)
 })
 simSock.on('error', (err) => { console.log('  UDP socket error:', err.message) })
@@ -114,7 +116,7 @@ function sendFrameToSim(grid) {
     makeSimPkt(0x5566),                          // End Frame
   ]
   for (const p of pkts) {
-    simSock.send(p, SIM_TARGET_PORT, '127.0.0.1', (err) => {
+    simSock.send(p, SIM_TARGET_PORT, SIM_DEVICE_IP, (err) => {
       if (err) console.log('  UDP send error:', err.message)
     })
   }
